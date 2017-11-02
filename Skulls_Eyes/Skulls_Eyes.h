@@ -23,8 +23,8 @@ const char *        C_PWD               = "amIwelcome?";
 
 const char *        C_HOSTNAME          = "esp8266test";
 
-const char *        C_LOG_HOST          = "192.168.0.19"
-const char *        C_LOG_PORT          = "3000"
+const char *        C_LOG_HOST          = "192.168.0.19";
+const char *        C_LOG_PORT          = "3000";
 
 const char *        C_NTP_SERVER_NAME   = "de.pool.ntp.org";
 const int           C_NTP_PACKET_SIZE   =   48;  // NTP time stamp is in the first 48 bytes of the message
@@ -33,12 +33,23 @@ const unsigned int  C_NTP_SYNC_INTERVAL =  300;  // 300 sec. = 5 min.
 const unsigned int  C_MAX_PWM           = 1000;
 
 const unsigned long C_MAX_SLEEP_SECS    = 3600;
+const unsigned long C_RTC_CORRECTION    =  150;
 const unsigned long C_CHECK_SLEEP_MS    =   60 * 1000;
+const unsigned long C_MIN_SECS          =   60;
 const unsigned long C_MIN_MICROSECS     =   60 * 1000 * 1000;
 
 const unsigned int  C_WAKEUP_HOUR[]     = {0, 18, 18, 19, 21, 22, 22, 22, 22, 21, 20, 18, 17};
 
 const char *        C_NE_SPACE_HTML     = "Can't allocate memory for webpage";
+
+const String        C_REASON_CODE[7]    = {"normal startup by power on",
+                                           "hardware watch dog reset",
+                                           "exception reset, GPIO status not changed",
+                                           "software watch dog reset, GPIO status not changed",
+                                           "software restart, system_restart, GPIO status not changed",
+                                           "wake up from deep-sleep",
+                                           "external system reset", 
+                                          };
 
 //
 // Global parameter variables - Can be changed by rest-service
@@ -75,8 +86,10 @@ ESP8266WebServer webServer(80);
 Ticker           g_LED_ticker;
 
 ESP8266Logger    logger;
-
 char             g_logStr[255];
+int              g_logSer;
+int              g_logWifi;
+
 char *           g_skullsEyesHTML =
 //    <meta http-equiv='refresh' content='5'/>\
 

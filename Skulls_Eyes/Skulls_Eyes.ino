@@ -19,108 +19,114 @@ void setup() {
   Serial.begin(115200);
   delay(10);
 
-  if (logger.regLogDestSerial(DEBUG, LOG_SERIAL) < 0) {
+  g_rstInfo = system_get_rst_info();
+
+  if ((g_logSer = logger.regLogDestSerial(DEBUG, LOG_SERIAL)) < 0) {
     Serial.println();
     Serial.println("Register Serial logger failed!");
   }
-  if (logger.regLogDestWifi(DEBUG, C_LOG_HOST, C_LOG_PORT, "/log", String(C_HOSTNAME) + ".log", 
-                         "logLev", "logFct", "logStr", "logStrln") < 0) {
+  if ((g_logWifi = logger.regLogDestWifi(DEBUG, C_LOG_HOST, C_LOG_PORT, "/log", String(C_HOSTNAME) + ".log", 
+                                         "logLev", "logFct", "logStr", "logStrln")) < 0) {
     Serial.println();
     Serial.println("Register Wifi logger failed!");
   }
+
+  wifiConnect();
   
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", "ESP12E - Skull Eyes");
-  logger.logln(DEBUG, "SETUP", "");
-
-  g_rstInfo = system_get_rst_info();
-
-  logger.logln(DEBUG, "SETUP", "g_rstInfo->reason = " + String(g_rstInfo->reason));
-  logger.logln(DEBUG, "SETUP", "");
-
   loadConfig();
 
+  if (WiFi.status() == WL_CONNECTED) {
+    setupOTA();
+    
+    ntpConnect();
+    delay(1000);
+    t_localTime = getNtpTime();
+  }
+
+  t_localTime = getLocalTime();
+
+  if (g_rstInfo->reason != REASON_DEEP_SLEEP_AWAKE || g_skullsEyes.wakeupTime == 0) {
+    breakTime(t_localTime, tm);
+
+    tm.Hour   = (g_skullsEyes.wakeupHour == 0) ? C_WAKEUP_HOUR[tm.Month] : g_skullsEyes.wakeupHour;
+    tm.Minute = 0;
+    tm.Second = 0;
+    
+    g_skullsEyes.wakeupTime = makeTime(tm); 
+    g_skullsEyes.sleepTime  = (g_skullsEyes.stayAliveHours == 0) ? 0 : 
+                               g_skullsEyes.wakeupTime + g_skullsEyes.stayAliveHours * SECS_PER_HOUR;
+
+    if (t_localTime > g_skullsEyes.wakeupTime) {
+      g_skullsEyes.wakeupTime += SECS_PER_DAY;
+    }
+    if (g_skullsEyes.sleepTime > 0 && t_localTime > g_skullsEyes.sleepTime) {
+      g_skullsEyes.sleepTime += SECS_PER_DAY;
+    }
+  }
+ 
   g_Max_PWM = (g_skullsEyes.dimmer == 100) ? C_MAX_PWM : g_skullsEyes.dimmer * 2.7;
   g_LED_brightness_factor = pow((double) g_Max_PWM, (double) 1 / g_skullsEyes.steps);
 
+  logger.logln(DEBUG, "SETUP", "");
+  logger.logln(DEBUG, "SETUP", "Reason for wakeup or (re)start:");
+  logger.logln(DEBUG, "SETUP", "g_rstInfo->reason = " + String(g_rstInfo->reason));
+  logger.logln(DEBUG, "SETUP", String("  - means: ") + C_REASON_CODE[g_rstInfo->reason]);
+  logger.logln(DEBUG, "SETUP", "");
   logger.logln(DEBUG, "SETUP", String("g_Max_PWM               = ") + g_Max_PWM);
   logger.logln(DEBUG, "SETUP", String("g_skullsEyes.steps      = ") + g_skullsEyes.steps);
   logger.logln(DEBUG, "SETUP", String("g_LED_brightness_factor = ") + g_LED_brightness_factor);
   logger.logln(DEBUG, "SETUP", String("g_skullsEyes.ledDelayMS = ") + g_skullsEyes.ledDelayMS);
   logger.logln(DEBUG, "SETUP", "");
 
-  if (wifiConnect()) {
-    setupOTA();
-    
-    ntpConnect();
-    delay(1000);
-    t_localTime = getNtpTime();
+  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
+                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
+                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
+  logger.logln(DEBUG, "SETUP", g_logStr);
+  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(t_localTime), month(t_localTime), year(t_localTime),
+                    hour(t_localTime), minute(t_localTime), second(t_localTime));
+  logger.logln(DEBUG, "SETUP", g_logStr);
+  sprintf(g_logStr, "wakup time       : %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.wakeupTime), month(g_skullsEyes.wakeupTime), 
+                    year(g_skullsEyes.wakeupTime), hour(g_skullsEyes.wakeupTime), 
+                    minute(g_skullsEyes.wakeupTime), second(g_skullsEyes.wakeupTime));
+  logger.logln(DEBUG, "SETUP", g_logStr);
+  sprintf(g_logStr, "sleep time       : %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.sleepTime), month(g_skullsEyes.sleepTime), 
+                    year(g_skullsEyes.sleepTime), hour(g_skullsEyes.sleepTime), 
+                    minute(g_skullsEyes.sleepTime), second(g_skullsEyes.sleepTime));
+  logger.logln(DEBUG, "SETUP", g_logStr);
+  logger.logln(DEBUG, "SETUP", String("g_skullsEyes.localTimeApprox: ") + g_skullsEyes.localTimeApprox);
+  logger.logln(DEBUG, "SETUP", String("t_localTime                 : ") + t_localTime);
+  logger.logln(DEBUG, "SETUP", String("g_skullsEyes.wakeupTime     : ") + g_skullsEyes.wakeupTime);
+  logger.logln(DEBUG, "SETUP", String("g_skullsEyes.sleepTime      : ") + g_skullsEyes.sleepTime);
 
-    t_localTime = getLocalTime();
+  if (g_rstInfo->reason == REASON_DEEP_SLEEP_AWAKE) {
+    t_timeDiff = g_skullsEyes.wakeupTime - t_localTime;
 
-    if (g_rstInfo->reason != REASON_DEEP_SLEEP_AWAKE || year(g_skullsEyes.wakeupTime) == 1970) {
-      breakTime(t_localTime, tm);
+    logger.logln(DEBUG, "SETUP", String("t_timeDiff (WakeupTime - LocalTime): ") + t_timeDiff);
 
-      tm.Hour   = (g_skullsEyes.wakeupHour == 0) ? C_WAKEUP_HOUR[tm.Month] : g_skullsEyes.wakeupHour;
-      tm.Minute = 0;
-      tm.Second = 0;
+    if (t_timeDiff > 0) {
+      uint32_t ul_sleepSecs = (t_timeDiff > C_MAX_SLEEP_SECS) ? C_MAX_SLEEP_SECS : t_timeDiff;
       
-      g_skullsEyes.wakeupTime = makeTime(tm); 
-      g_skullsEyes.sleepTime  = (g_skullsEyes.stayAliveHours == 0) ? 0 : 
-                                 g_skullsEyes.wakeupTime + g_skullsEyes.stayAliveHours * SECS_PER_HOUR;
+      t_localTime = getLocalTime();  // to get new localTimeApprox
+      g_skullsEyes.localTimeApprox += ul_sleepSecs;  // localTimeApprox will be at next wakeup
+      saveConfig();
+
+      if (ul_sleepSecs == C_MAX_SLEEP_SECS)
+        ul_sleepSecs += C_RTC_CORRECTION;  // esp8266 wakes up ~150 secs to early if letting it sleep for 1 hour
+      logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + ul_sleepSecs + " sec.)");
+      ESP.deepSleep(ul_sleepSecs * 1000 * 1000);
+      delay(5000);
+    }
+    else {
+      g_skullsEyes.wakeupTime += SECS_PER_DAY;
+      saveConfig();
+    }
+  }
   
-      if (t_localTime > g_skullsEyes.wakeupTime) {
-        g_skullsEyes.wakeupTime += SECS_PER_DAY;
-      }
-      if (g_skullsEyes.sleepTime > 0 && t_localTime > g_skullsEyes.sleepTime) {
-        g_skullsEyes.sleepTime += SECS_PER_DAY;
-      }
-    }
-   
-    sprintf(g_logStr, "local time: %02d.%02d.%04d - %02d:%02d:%02d",
-                      day(t_localTime), month(t_localTime), year(t_localTime),
-                      hour(t_localTime), minute(t_localTime), second(t_localTime));
-    logger.logln(DEBUG, "SETUP", g_logStr);
-    sprintf(g_logStr, "wakup time: %02d.%02d.%04d - %02d:%02d:%02d",
-                      day(g_skullsEyes.wakeupTime), month(g_skullsEyes.wakeupTime), 
-                      year(g_skullsEyes.wakeupTime), hour(g_skullsEyes.wakeupTime), 
-                      minute(g_skullsEyes.wakeupTime), second(g_skullsEyes.wakeupTime));
-    logger.logln(DEBUG, "SETUP", g_logStr);
-    sprintf(g_logStr, "sleep time: %02d.%02d.%04d - %02d:%02d:%02d",
-                      day(g_skullsEyes.sleepTime), month(g_skullsEyes.sleepTime), 
-                      year(g_skullsEyes.sleepTime), hour(g_skullsEyes.sleepTime), 
-                      minute(g_skullsEyes.sleepTime), second(g_skullsEyes.sleepTime));
-    logger.logln(DEBUG, "SETUP", g_logStr);
-    logger.logln(DEBUG, "SETUP", String("t_localTime:             ") + t_localTime);
-    logger.logln(DEBUG, "SETUP", String("g_skullsEyes.wakeupTime: ") + g_skullsEyes.wakeupTime);
-    logger.logln(DEBUG, "SETUP", String("g_skullsEyes.sleepTime:  ") + g_skullsEyes.sleepTime);
-
-    if (g_rstInfo->reason == REASON_DEEP_SLEEP_AWAKE) {
-      t_timeDiff = g_skullsEyes.wakeupTime - t_localTime;
-
-      logger.logln(DEBUG, "SETUP", String("t_timeDiff (WakeupTime - LocalTime): ") + t_timeDiff);
-
-      if (t_timeDiff > 0) {
-        uint32_t ul_sleepSecs = (t_timeDiff > C_MAX_SLEEP_SECS) ? C_MAX_SLEEP_SECS : t_timeDiff;
-        g_skullsEyes.localTimeApprox += ul_sleepSecs;
-        saveConfig();
-
-        logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + ul_sleepSecs + " sec.)");
-        ESP.deepSleep(ul_sleepSecs * 1000 * 1000);
-        delay(5000);
-      }
-      else {
-        g_skullsEyes.wakeupTime += SECS_PER_DAY;
-        saveConfig();
-      }
-    }
-/*
-    else if wakup after exception {
-      -- some special handling --
-    }
-*/
-  
+  if (WiFi.status() == WL_CONNECTED) {
     setupWebserver();
   } 
 
@@ -134,6 +140,8 @@ void setup() {
 // - handles client calls and reconnects to WiFi if connection is lost
 // __________________________________________________________________________________
 void loop() {
+  time_t t_localTime = 0;
+
   static unsigned long sul_millis = 0;
   
   ArduinoOTA.handle();
@@ -156,11 +164,9 @@ void loop() {
     if (sul_millis == 0 || millis() - sul_millis > C_CHECK_SLEEP_MS) {
       sul_millis = millis();      
 
-      g_skullsEyes.localTimeApprox += C_CHECK_SLEEP_MS;
+      t_localTime = getLocalTime();
     
-      time_t t_localTime = getLocalTime();
-    
-      if (year(g_skullsEyes.wakeupTime) == 1970) {
+      if (g_skullsEyes.wakeupTime == 0) {
         tmElements_t tm;
         
         breakTime(t_localTime, tm);
@@ -179,39 +185,49 @@ void loop() {
         g_skullsEyes.wakeupTime += SECS_PER_DAY;
       }
 
-      sprintf(g_logStr, "local time: %02d.%02d.%04d - %02d:%02d:%02d",
+      logger.logln(DEBUG, "LOOP", "");
+      sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
+                        day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
+                        year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
+                        minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
+      logger.logln(DEBUG, "LOOP", g_logStr);
+      sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
                         day(t_localTime), month(t_localTime), year(t_localTime),
                         hour(t_localTime), minute(t_localTime), second(t_localTime));
       logger.logln(DEBUG, "LOOP", g_logStr);
-      sprintf(g_logStr, "wakup time: %02d.%02d.%04d - %02d:%02d:%02d",
+      sprintf(g_logStr, "wakup time       : %02d.%02d.%04d - %02d:%02d:%02d",
                         day(g_skullsEyes.wakeupTime), month(g_skullsEyes.wakeupTime), 
                         year(g_skullsEyes.wakeupTime), hour(g_skullsEyes.wakeupTime), 
                         minute(g_skullsEyes.wakeupTime), second(g_skullsEyes.wakeupTime));
       logger.logln(DEBUG, "LOOP", g_logStr);
-      sprintf(g_logStr, "sleep time: %02d.%02d.%04d - %02d:%02d:%02d",
+      sprintf(g_logStr, "sleep time       : %02d.%02d.%04d - %02d:%02d:%02d",
                         day(g_skullsEyes.sleepTime), month(g_skullsEyes.sleepTime), 
                         year(g_skullsEyes.sleepTime), hour(g_skullsEyes.sleepTime), 
                         minute(g_skullsEyes.sleepTime), second(g_skullsEyes.sleepTime));
       logger.logln(DEBUG, "LOOP", g_logStr);
-      logger.logln(DEBUG, "LOOP", String("t_localTime:             ") + t_localTime);
-      logger.logln(DEBUG, "LOOP", String("g_skullsEyes.wakeupTime: ") + g_skullsEyes.wakeupTime);
-      logger.logln(DEBUG, "LOOP", String("g_skullsEyes.sleepTime:  ") + g_skullsEyes.sleepTime);
+      logger.logln(DEBUG, "LOOP", String("g_skullsEyes.localTimeApprox: ") + g_skullsEyes.localTimeApprox);
+      logger.logln(DEBUG, "LOOP", String("t_localTime                 : ") + t_localTime);
+      logger.logln(DEBUG, "LOOP", String("g_skullsEyes.wakeupTime     : ") + g_skullsEyes.wakeupTime);
+      logger.logln(DEBUG, "LOOP", String("g_skullsEyes.sleepTime      : ") + g_skullsEyes.sleepTime);
 
       if (g_skullsEyes.sleepTime > 0 && t_localTime > g_skullsEyes.sleepTime) {
-        g_skullsEyes.localTimeApprox += C_MAX_SLEEP_SECS;
-        g_skullsEyes.sleepTime       += SECS_PER_DAY;
-        saveConfig();
+        g_skullsEyes.sleepTime += SECS_PER_DAY;
 
-        sprintf(g_logStr, "sleep time: %02d.%02d.%04d - %02d:%02d:%02d",
+        sprintf(g_logStr, "new sleep time: %02d.%02d.%04d - %02d:%02d:%02d",
                           day(g_skullsEyes.sleepTime), month(g_skullsEyes.sleepTime), 
                           year(g_skullsEyes.sleepTime), hour(g_skullsEyes.sleepTime), 
                           minute(g_skullsEyes.sleepTime), second(g_skullsEyes.sleepTime));
         logger.logln(DEBUG, "LOOP", g_logStr);
-        logger.logln(DEBUG, "LOOP", String("g_skullsEyes.sleepTime:  ") + g_skullsEyes.sleepTime);
+        logger.logln(DEBUG, "LOOP", String("new g_skullsEyes.sleepTime: ") + g_skullsEyes.sleepTime);
   
-        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + C_MAX_SLEEP_SECS + " sec.)");
+        t_localTime = getLocalTime();  // to get new localTimeApprox
+        g_skullsEyes.localTimeApprox += C_MAX_SLEEP_SECS;  // localTimeApprox will be at next wakeup
+        saveConfig();
+  
+        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + String((C_MAX_SLEEP_SECS + C_RTC_CORRECTION)) + 
+                                    " sec.)");
 
-        ESP.deepSleep(C_MAX_SLEEP_SECS * 1000 * 1000);
+        ESP.deepSleep((C_MAX_SLEEP_SECS + C_RTC_CORRECTION) * 1000 * 1000);
         delay(5000);
       }
     }
@@ -224,8 +240,11 @@ void loop() {
 // - connects to WiFi
 // __________________________________________________________________________________
 boolean wifiConnect() {
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", String("Connecting to AP '") + C_SSID + "': ");
+  logger.logln(g_logSer, DEBUG, "SETUP", "");
+  logger.logln(g_logSer, DEBUG, "SETUP", String("----------------------------------------------------"));
+  logger.logln(g_logSer, DEBUG, "SETUP", String("ESP8266 (re)starting or reconnecting after WiFi lost"));
+  logger.logln(g_logSer, DEBUG, "SETUP", "");
+  logger.logln(g_logSer, DEBUG, "SETUP", String("Connecting to AP '") + C_SSID + "': ");
 
   WiFi.hostname(C_HOSTNAME);
   WiFi.mode(WIFI_STA); // Als Station an einen vorhanden Access Ppoint anmelden
@@ -243,7 +262,13 @@ boolean wifiConnect() {
   if (WiFi.status() == WL_CONNECTED) {
     IPAddress IPAddr = WiFi.localIP();
     
-    logger.logln(DEBUG, "SETUP", "");
+    logger.logln(g_logWifi, DEBUG, "SETUP", "");
+    logger.logln(g_logWifi, DEBUG, "SETUP", String("----------------------------------------------------"));
+    logger.logln(g_logWifi, DEBUG, "SETUP", String("ESP8266 (re)starting or reconnecting after WiFi lost"));
+    logger.logln(g_logWifi, DEBUG, "SETUP", "");
+    logger.logln(g_logWifi, DEBUG, "SETUP", String("Connecting to AP: ") + C_SSID);
+
+    logger.logln(DEBUG, "SETUP", String("Time to connect: ") + conn_tics * 500 + " ms");
     logger.logln(DEBUG, "SETUP", String("IP-Adr: ") + IPAddr[0] + "." + IPAddr[1] + "." + IPAddr[2] + "." + IPAddr[3]);
 //    WiFi.printDiag(Serial);
 
@@ -400,23 +425,49 @@ time_t getNtpTime() {
 // - gets the local time
 // __________________________________________________________________________________
 time_t getLocalTime() {
-  TimeChangeRule CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
-  TimeChangeRule CET  = { "CET",  Last, Sun, Oct, 3,  60 };  // Central European Standard Time
-  Timezone CE(CEST, CET);
-  TimeChangeRule *tcr;        //pointer to the time change rule, use to get the TZ abbrev
+  static TimeChangeRule   CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
+  static TimeChangeRule   CET  = { "CET",  Last, Sun, Oct, 3,  60 };  // Central European Standard Time
+  static Timezone         CE(CEST, CET);
+  static TimeChangeRule * tcr;             //pointer to the time change rule, use to get the TZ abbrev
+  static unsigned long    sul_millis = 0;
   
-  time_t t_timeLOCAL = 0;
+  g_skullsEyes.localTimeApprox += (millis() - sul_millis) / 1000;
+  sul_millis = millis();      
 
-  t_timeLOCAL = (year(now()) == 1970) ? g_skullsEyes.localTimeApprox : CE.toLocal(now(), &tcr);
-  g_skullsEyes.localTimeApprox = t_timeLOCAL;
-
-/*
+  time_t t_timeLOCAL = CE.toLocal(now(), &tcr);
+  
   logger.logln(DEBUG, "TIME", "");
-  sprintf(g_logStr, "local time: %02d.%02d.%04d - %02d:%02d:%02d",
+  logger.logln(DEBUG, "TIME", "Before check TimeLocal - TimeLocalApprox deviation:");
+  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
+                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
+                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
+  logger.logln(DEBUG, "TIME", g_logStr);
+  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
                     day(t_timeLOCAL), month(t_timeLOCAL), year(t_timeLOCAL),
                     hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
   logger.logln(DEBUG, "TIME", g_logStr);
-*/
+
+  if ((g_skullsEyes.localTimeApprox - 3600) > t_timeLOCAL || (g_skullsEyes.localTimeApprox + 3600) < t_timeLOCAL) {
+    t_timeLOCAL = g_skullsEyes.localTimeApprox;
+  
+    logger.logln(DEBUG, "TIME", "Deviation TimeLocal - TimeLocalApprox more than 1 hour, so use LocalTimeApprox");
+  }
+  
+  g_skullsEyes.localTimeApprox = t_timeLOCAL;
+
+  logger.logln(DEBUG, "TIME", "After check TimeLocal - TimeLocalApprox deviation:");
+  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
+                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
+                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
+  logger.logln(DEBUG, "TIME", g_logStr);
+  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(t_timeLOCAL), month(t_timeLOCAL), year(t_timeLOCAL),
+                    hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
+  logger.logln(DEBUG, "TIME", g_logStr);
+
+  saveConfig();
 
   return t_timeLOCAL;
 }
@@ -540,8 +591,10 @@ void wsHandler_skull_eyes_parameters() {
     if (webServer.argName(i) == "Stay_Alive")
       g_skullsEyes.stayAliveHours = webServer.arg(i).toInt();
     if (webServer.argName(i) == "Button" && webServer.arg(i) == "Sleep") {
+      time_t t_localTime = getLocalTime();  // to get new localTimeApprox
+      g_skullsEyes.localTimeApprox += C_MIN_SECS;  // localTimeApprox will be at next wakeup
       saveConfig();
-      logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + C_MIN_MICROSECS + ")");
+      logger.logln(DEBUG, "HTTP", String("ESP.deepSleep(") + C_MIN_SECS + " sec.)");
       ESP.deepSleep(C_MIN_MICROSECS);
       delay(5000);
     }
@@ -683,8 +736,8 @@ void loadConfig() {
   EEPROM.end();
   
   if (g_skullsEyes.saved != 0x1010) {
-    logger.logln(DEBUG, "SETUP", "Load config failed or not saved last time !!!");
-    logger.logln(DEBUG, "SETUP", "");
+    logger.logln(DEBUG, "LOAD-CONFIG", "");
+    logger.logln(DEBUG, "LOAD-CONFIG", "Load config failed or not saved last time !!!");
 
     g_skullsEyes.saved               = 0x1010;
     g_skullsEyes.control             =   2;  // 0: On, 1: Off, 2: Fade
@@ -711,7 +764,7 @@ void saveConfig() {
   EEPROM.commit();
   EEPROM.end();
 
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", "Config saved");
+  logger.logln(DEBUG, "SAVE-CONFIG", "");
+  logger.logln(DEBUG, "SAVE-CONFIG", "Config saved");
 }
 
