@@ -21,12 +21,12 @@ void setup() {
 
   g_rstInfo = system_get_rst_info();
 
-  if (logger.regLogDestSerial(DEBUG, LOG_SERIAL) < 0) {
+  if ((g_logSer = logger.regLogDestSerial(DEBUG, LOG_SERIAL)) < 0) {
     Serial.println();
     Serial.println("Register Serial logger failed!");
   }
-  if (logger.regLogDestWifi(DEBUG, C_LOG_HOST, C_LOG_PORT, "/log", String(C_HOSTNAME) + ".log", 
-                            "logLev", "logFct", "logStr", "logStrln") < 0) {
+  if ((g_logWifi = logger.regLogDestWifi(DEBUG, C_LOG_HOST, C_LOG_PORT, "/log", String(C_HOSTNAME) + ".log", 
+                                         "logLev", "logFct", "logStr", "logStrln")) < 0) {
     Serial.println();
     Serial.println("Register Wifi logger failed!");
   }
@@ -70,6 +70,7 @@ void setup() {
   logger.logln(DEBUG, "SETUP", "");
   logger.logln(DEBUG, "SETUP", "Reason for wakeup or (re)start:");
   logger.logln(DEBUG, "SETUP", "g_rstInfo->reason = " + String(g_rstInfo->reason));
+  logger.logln(DEBUG, "SETUP", String("  - means: ") + C_REASON_CODE[g_rstInfo->reason]);
   logger.logln(DEBUG, "SETUP", "");
   logger.logln(DEBUG, "SETUP", String("g_Max_PWM               = ") + g_Max_PWM);
   logger.logln(DEBUG, "SETUP", String("g_skullsEyes.steps      = ") + g_skullsEyes.steps);
@@ -114,7 +115,7 @@ void setup() {
       saveConfig();
 
       if (ul_sleepSecs == C_MAX_SLEEP_SECS)
-        ul_sleepSecs += 200;  // esp8266 wakes up 3 minutes to early if letting it sleep for 1 hour
+        ul_sleepSecs += C_RTC_CORRECTION;  // esp8266 wakes up ~150 secs to early if letting it sleep for 1 hour
       logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + ul_sleepSecs + " sec.)");
       ESP.deepSleep(ul_sleepSecs * 1000 * 1000);
       delay(5000);
@@ -184,6 +185,7 @@ void loop() {
         g_skullsEyes.wakeupTime += SECS_PER_DAY;
       }
 
+      logger.logln(DEBUG, "LOOP", "");
       sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
                         day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
                         year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
@@ -222,9 +224,9 @@ void loop() {
         g_skullsEyes.localTimeApprox += (C_MAX_SLEEP_SECS * 1000);  // localTimeApprox will be at next wakeup
         saveConfig();
   
-        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + C_MAX_SLEEP_SECS + 200 + " sec.)");
+        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + C_MAX_SLEEP_SECS + C_RTC_CORRECTION + " sec.)");
 
-        ESP.deepSleep((C_MAX_SLEEP_SECS + 200) * 1000 * 1000);
+        ESP.deepSleep((C_MAX_SLEEP_SECS + C_RTC_CORRECTION) * 1000 * 1000);
         delay(5000);
       }
     }
@@ -237,11 +239,11 @@ void loop() {
 // - connects to WiFi
 // __________________________________________________________________________________
 boolean wifiConnect() {
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", String("----------------------------------------------------"));
-  logger.logln(DEBUG, "SETUP", String("ESP8266 (re)starting or reconnecting after WiFi lost"));
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", String("Connecting to AP '") + C_SSID + "': ");
+  logger.logln(g_logSer, DEBUG, "SETUP", "");
+  logger.logln(g_logSer, DEBUG, "SETUP", String("----------------------------------------------------"));
+  logger.logln(g_logSer, DEBUG, "SETUP", String("ESP8266 (re)starting or reconnecting after WiFi lost"));
+  logger.logln(g_logSer, DEBUG, "SETUP", "");
+  logger.logln(g_logSer, DEBUG, "SETUP", String("Connecting to AP '") + C_SSID + "': ");
 
   WiFi.hostname(C_HOSTNAME);
   WiFi.mode(WIFI_STA); // Als Station an einen vorhanden Access Ppoint anmelden
@@ -259,8 +261,13 @@ boolean wifiConnect() {
   if (WiFi.status() == WL_CONNECTED) {
     IPAddress IPAddr = WiFi.localIP();
     
+    logger.logln(g_logWifi, DEBUG, "SETUP", "");
+    logger.logln(g_logWifi, DEBUG, "SETUP", String("----------------------------------------------------"));
+    logger.logln(g_logWifi, DEBUG, "SETUP", String("ESP8266 (re)starting or reconnecting after WiFi lost"));
+    logger.logln(g_logWifi, DEBUG, "SETUP", "");
+    logger.logln(g_logWifi, DEBUG, "SETUP", String("Connecting to AP: ") + C_SSID);
+
     logger.logln(DEBUG, "SETUP", String("Time to connect: ") + conn_tics * 500 + " ms");
-    logger.logln(DEBUG, "SETUP", "");
     logger.logln(DEBUG, "SETUP", String("IP-Adr: ") + IPAddr[0] + "." + IPAddr[1] + "." + IPAddr[2] + "." + IPAddr[3]);
 //    WiFi.printDiag(Serial);
 
