@@ -111,7 +111,7 @@ void setup() {
       uint32_t ul_sleepSecs = (t_timeDiff > C_MAX_SLEEP_SECS) ? C_MAX_SLEEP_SECS : t_timeDiff;
       
       t_localTime = getLocalTime();  // to get new localTimeApprox
-      g_skullsEyes.localTimeApprox += (ul_sleepSecs * 1000);  // localTimeApprox will be at next wakeup
+      g_skullsEyes.localTimeApprox += ul_sleepSecs;  // localTimeApprox will be at next wakeup
       saveConfig();
 
       if (ul_sleepSecs == C_MAX_SLEEP_SECS)
@@ -221,10 +221,11 @@ void loop() {
         logger.logln(DEBUG, "LOOP", String("new g_skullsEyes.sleepTime: ") + g_skullsEyes.sleepTime);
   
         t_localTime = getLocalTime();  // to get new localTimeApprox
-        g_skullsEyes.localTimeApprox += (C_MAX_SLEEP_SECS * 1000);  // localTimeApprox will be at next wakeup
+        g_skullsEyes.localTimeApprox += C_MAX_SLEEP_SECS;  // localTimeApprox will be at next wakeup
         saveConfig();
   
-        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + C_MAX_SLEEP_SECS + C_RTC_CORRECTION + " sec.)");
+        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + String((C_MAX_SLEEP_SECS + C_RTC_CORRECTION)) + 
+                                    " sec.)");
 
         ESP.deepSleep((C_MAX_SLEEP_SECS + C_RTC_CORRECTION) * 1000 * 1000);
         delay(5000);
@@ -424,32 +425,49 @@ time_t getNtpTime() {
 // - gets the local time
 // __________________________________________________________________________________
 time_t getLocalTime() {
-  TimeChangeRule CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
-  TimeChangeRule CET  = { "CET",  Last, Sun, Oct, 3,  60 };  // Central European Standard Time
-  Timezone CE(CEST, CET);
-  TimeChangeRule *tcr;        //pointer to the time change rule, use to get the TZ abbrev
-
-  static unsigned long sul_millis = 0;
+  static TimeChangeRule   CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
+  static TimeChangeRule   CET  = { "CET",  Last, Sun, Oct, 3,  60 };  // Central European Standard Time
+  static Timezone         CE(CEST, CET);
+  static TimeChangeRule * tcr;             //pointer to the time change rule, use to get the TZ abbrev
+  static unsigned long    sul_millis = 0;
   
-  time_t t_timeLOCAL = 0;
-
-  g_skullsEyes.localTimeApprox += millis() - sul_millis;
+  g_skullsEyes.localTimeApprox += (millis() - sul_millis) / 1000;
   sul_millis = millis();      
 
-  t_timeLOCAL = CE.toLocal(now(), &tcr);
+  time_t t_timeLOCAL = CE.toLocal(now(), &tcr);
   
-  if (year(t_timeLOCAL) == 1970 || t_timeLOCAL - 3600*1000 > g_skullsEyes.localTimeApprox)
-    t_timeLOCAL = g_skullsEyes.localTimeApprox;
-  
-  g_skullsEyes.localTimeApprox = t_timeLOCAL;
-
-/*
   logger.logln(DEBUG, "TIME", "");
-  sprintf(g_logStr, "local time: %02d.%02d.%04d - %02d:%02d:%02d",
+  logger.logln(DEBUG, "TIME", "Before check TimeLocal - TimeLocalApprox deviation:");
+  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
+                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
+                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
+  logger.logln(DEBUG, "TIME", g_logStr);
+  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
                     day(t_timeLOCAL), month(t_timeLOCAL), year(t_timeLOCAL),
                     hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
   logger.logln(DEBUG, "TIME", g_logStr);
-*/
+
+  if ((g_skullsEyes.localTimeApprox - 3600) > t_timeLOCAL || (g_skullsEyes.localTimeApprox + 3600) < t_timeLOCAL) {
+    t_timeLOCAL = g_skullsEyes.localTimeApprox;
+  
+    logger.logln(DEBUG, "TIME", "Deviation TimeLocal - TimeLocalApprox more than 1 hour, so use LocalTimeApprox");
+  }
+  
+  g_skullsEyes.localTimeApprox = t_timeLOCAL;
+
+  logger.logln(DEBUG, "TIME", "After check TimeLocal - TimeLocalApprox deviation:");
+  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
+                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
+                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
+  logger.logln(DEBUG, "TIME", g_logStr);
+  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
+                    day(t_timeLOCAL), month(t_timeLOCAL), year(t_timeLOCAL),
+                    hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
+  logger.logln(DEBUG, "TIME", g_logStr);
+
+  saveConfig();
 
   return t_timeLOCAL;
 }
@@ -573,8 +591,10 @@ void wsHandler_skull_eyes_parameters() {
     if (webServer.argName(i) == "Stay_Alive")
       g_skullsEyes.stayAliveHours = webServer.arg(i).toInt();
     if (webServer.argName(i) == "Button" && webServer.arg(i) == "Sleep") {
+      time_t t_localTime = getLocalTime();  // to get new localTimeApprox
+      g_skullsEyes.localTimeApprox += C_MIN_SECS;  // localTimeApprox will be at next wakeup
       saveConfig();
-      logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + C_MIN_MICROSECS + ")");
+      logger.logln(DEBUG, "HTTP", String("ESP.deepSleep(") + C_MIN_SECS + " sec.)");
       ESP.deepSleep(C_MIN_MICROSECS);
       delay(5000);
     }
@@ -716,8 +736,8 @@ void loadConfig() {
   EEPROM.end();
   
   if (g_skullsEyes.saved != 0x1010) {
-    logger.logln(DEBUG, "SETUP", "");
-    logger.logln(DEBUG, "SETUP", "Load config failed or not saved last time !!!");
+    logger.logln(DEBUG, "LOAD-CONFIG", "");
+    logger.logln(DEBUG, "LOAD-CONFIG", "Load config failed or not saved last time !!!");
 
     g_skullsEyes.saved               = 0x1010;
     g_skullsEyes.control             =   2;  // 0: On, 1: Off, 2: Fade
@@ -744,7 +764,7 @@ void saveConfig() {
   EEPROM.commit();
   EEPROM.end();
 
-  logger.logln(DEBUG, "SETUP", "");
-  logger.logln(DEBUG, "SETUP", "Config saved");
+  logger.logln(DEBUG, "SAVE-CONFIG", "");
+  logger.logln(DEBUG, "SAVE-CONFIG", "Config saved");
 }
 

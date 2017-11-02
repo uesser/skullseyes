@@ -35,6 +35,7 @@ const unsigned int  C_MAX_PWM           = 1000;
 const unsigned long C_MAX_SLEEP_SECS    = 3600;
 const unsigned long C_RTC_CORRECTION    =  150;
 const unsigned long C_CHECK_SLEEP_MS    =   60 * 1000;
+const unsigned long C_MIN_SECS          =   60;
 const unsigned long C_MIN_MICROSECS     =   60 * 1000 * 1000;
 
 const unsigned int  C_WAKEUP_HOUR[]     = {0, 18, 18, 19, 21, 22, 22, 22, 22, 21, 20, 18, 17};
