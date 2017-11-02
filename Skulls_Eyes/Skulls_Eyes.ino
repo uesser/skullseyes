@@ -448,12 +448,13 @@ time_t getLocalTime() {
                     hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
   logger.logln(DEBUG, "TIME", g_logStr);
 
-  if ((g_skullsEyes.localTimeApprox - 3600) > t_timeLOCAL || (g_skullsEyes.localTimeApprox + 3600) < t_timeLOCAL) {
+  if (year(g_skullsEyes.localTimeApprox) > 1970 &&
+      (g_skullsEyes.localTimeApprox - 3600) > t_timeLOCAL || (g_skullsEyes.localTimeApprox + 3600) < t_timeLOCAL) {
     t_timeLOCAL = g_skullsEyes.localTimeApprox;
   
     logger.logln(DEBUG, "TIME", "Deviation TimeLocal - TimeLocalApprox more than 1 hour, so use LocalTimeApprox");
   }
-  
+
   g_skullsEyes.localTimeApprox = t_timeLOCAL;
 
   logger.logln(DEBUG, "TIME", "After check TimeLocal - TimeLocalApprox deviation:");

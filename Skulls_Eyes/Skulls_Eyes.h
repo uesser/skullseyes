@@ -21,7 +21,7 @@ extern "C" {
 const char *        C_SSID              = "Bazinga";
 const char *        C_PWD               = "amIwelcome?";
 
-const char *        C_HOSTNAME          = "esp8266test";
+const char *        C_HOSTNAME          = "skullseyes";
 
 const char *        C_LOG_HOST          = "192.168.0.19";
 const char *        C_LOG_PORT          = "3000";
@@ -66,7 +66,7 @@ typedef struct {
   uint16_t stayAliveHours;
   time_t   wakeupTime;
   time_t   sleepTime;
-  time_t   localTimeApprox;
+  uint32_t localTimeApprox;
 } skullsEyes_t;
 
 // Global variables
