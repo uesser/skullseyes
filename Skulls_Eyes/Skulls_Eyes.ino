@@ -417,7 +417,8 @@ time_t getNtpTime() {
       logger.logln(DEBUG, "TIME", "No NTP Response!");
     }
     else {
-      sprintf(g_logStr, "UTC time: %02d:%02d:%02d", 
+      sprintf(g_logStr, "UTC time: %02d.%02d.%04d - %02d:%02d:%02d",
+                        day(t_timeUNIX), month(t_timeUNIX), year(t_timeUNIX), 
                         hour(t_timeUNIX), minute(t_timeUNIX), second(t_timeUNIX));
       logger.logln(DEBUG, "TIME", g_logStr);
     }
