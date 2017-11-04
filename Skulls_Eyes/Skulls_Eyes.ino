@@ -39,8 +39,6 @@ void setup() {
     setupOTA();
     
     ntpConnect();
-    delay(1000);
-    t_localTime = getNtpTime();
   }
 
   t_localTime = getLocalTime();
@@ -152,7 +150,10 @@ void loop() {
 
     if (wifiConnect()) {
       setupOTA();
+      ntpConnect();
       setupWebserver();
+      
+      t_localTime = getLocalTime();
     }
     else
       delay(5000); 
@@ -342,8 +343,8 @@ void ntpConnect() {
 
   logger.logln(DEBUG, "SETUP", String("Local port: ") + UDP.localPort());
 
-  setSyncProvider(getNtpTime);
   setSyncInterval(C_NTP_SYNC_INTERVAL);
+  setSyncProvider(getNtpTime);
 }
 
 // ___________________________________ sendNTPpacket ________________________________
@@ -378,43 +379,48 @@ time_t getNtpTime() {
 
   while (UDP.parsePacket() > 0) ; // discard any previously received packets
 
-//    logger.logln(DEBUG, "TIME", "");
-//    logger.logln(DEBUG, "TIME", "Sending NTP request ...");
-  
+  logger.logln(DEBUG, "TIME", "");
+  logger.logln(DEBUG, "TIME", "Sending NTP request ...");
+
   if (! WiFi.hostByName(C_NTP_SERVER_NAME, g_timeServerIP)) {  // Get the IP address of the NTP server
-//    logger.logln(DEBUG, "TIME", "DNS lookup failed!");
+    logger.logln(DEBUG, "TIME", "DNS lookup failed!");
   }
   else {
-//    logger.logln(DEBUG, "TIME", String("Time server IP: ") + g_timeServerIP[0] + "." + g_timeServerIP[1] + "." + 
-//                                                g_timeServerIP[2] + "." + g_timeServerIP[3]);
+    logger.logln(DEBUG, "TIME", String("Time server IP: ") + g_timeServerIP[0] + "." + g_timeServerIP[1] + "." + 
+                                                             g_timeServerIP[2] + "." + g_timeServerIP[3]);
 
-    sendNTPpacket(g_timeServerIP);
+    for (int i = 1; i <= 2; i++) {
+      sendNTPpacket(g_timeServerIP);
+    
+      uint32_t ui_beginWait = millis();
+      while (millis() - ui_beginWait < 3000) {
+        if (UDP.parsePacket() >= C_NTP_PACKET_SIZE) {
+          logger.logln(DEBUG, "TIME", "Receive NTP Response");
+          
+          UDP.read(g_NTPBuffer, C_NTP_PACKET_SIZE);  // read packet into the buffer
+    
+          // convert four bytes starting at location 40 to a long integer
+          ui_ntpTime = (g_NTPBuffer[40] << 24) | (g_NTPBuffer[41] << 16) | 
+                       (g_NTPBuffer[42] <<  8) |  g_NTPBuffer[43];
+    
+          t_timeUNIX = ui_ntpTime - C_SEVENTY_YEARS;
   
-    uint32_t ui_beginWait = millis();
-    while (millis() - ui_beginWait < 1000) {
-      if (UDP.parsePacket() >= C_NTP_PACKET_SIZE) {
-//        logger.logln(DEBUG, "TIME", "Receive NTP Response");
-        
-        UDP.read(g_NTPBuffer, C_NTP_PACKET_SIZE);  // read packet into the buffer
-  
-        // convert four bytes starting at location 40 to a long integer
-        ui_ntpTime = (g_NTPBuffer[40] << 24) | (g_NTPBuffer[41] << 16) | 
-                     (g_NTPBuffer[42] <<  8) |  g_NTPBuffer[43];
-  
-        t_timeUNIX = ui_ntpTime - C_SEVENTY_YEARS;
+          break;
+        }
       }
+
+      if (t_timeUNIX > 0)
+        break;
     }
-  
+
     if (t_timeUNIX == 0) {
-//      logger.logln(DEBUG, "TIME", "No NTP Response!");
-   }
+      logger.logln(DEBUG, "TIME", "No NTP Response!");
+    }
     else {
-/*
-      sprintf(g_logStr, "UTC time: %02d:%02d:%02d", 
+      sprintf(g_logStr, "UTC time: %02d.%02d.%04d - %02d:%02d:%02d",
+                        day(t_timeUNIX), month(t_timeUNIX), year(t_timeUNIX), 
                         hour(t_timeUNIX), minute(t_timeUNIX), second(t_timeUNIX));
       logger.logln(DEBUG, "TIME", g_logStr);
-      logger.logln(DEBUG, "TIME", "");
-*/
     }
   }
   
@@ -448,11 +454,10 @@ time_t getLocalTime() {
                     hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
   logger.logln(DEBUG, "TIME", g_logStr);
 
-  if (year(g_skullsEyes.localTimeApprox) > 1970 &&
-      (g_skullsEyes.localTimeApprox - 3600) > t_timeLOCAL || (g_skullsEyes.localTimeApprox + 3600) < t_timeLOCAL) {
+  if (timeStatus() != timeSet) {
     t_timeLOCAL = g_skullsEyes.localTimeApprox;
   
-    logger.logln(DEBUG, "TIME", "Deviation TimeLocal - TimeLocalApprox more than 1 hour, so use LocalTimeApprox");
+    logger.logln(DEBUG, "TIME", "No valid NTP-time, so use LocalTimeApprox");
   }
 
   g_skullsEyes.localTimeApprox = t_timeLOCAL;

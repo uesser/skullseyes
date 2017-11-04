@@ -21,12 +21,12 @@ extern "C" {
 const char *        C_SSID              = "Bazinga";
 const char *        C_PWD               = "amIwelcome?";
 
-const char *        C_HOSTNAME          = "skullseyes";
+const char *        C_HOSTNAME          = "esp8266test";
 
 const char *        C_LOG_HOST          = "192.168.0.19";
 const char *        C_LOG_PORT          = "3000";
 
-const char *        C_NTP_SERVER_NAME   = "de.pool.ntp.org";
+const char *        C_NTP_SERVER_NAME   = "192.168.0.19";  // "de.pool.ntp.org"
 const int           C_NTP_PACKET_SIZE   =   48;  // NTP time stamp is in the first 48 bytes of the message
 const unsigned int  C_NTP_SYNC_INTERVAL =  300;  // 300 sec. = 5 min.
 
