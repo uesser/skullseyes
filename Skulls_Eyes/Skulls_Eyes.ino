@@ -6,6 +6,8 @@
   Author: Udo Esser (24.09.2017)
 */
 
+#define ENERGY_EFFICIENT
+
 #include "Skulls_Eyes.h"
 
 // ___________________________________ setup ________________________________________
@@ -15,12 +17,15 @@ void setup() {
   sint32_t     t_timeDiff  = 0;
   time_t       t_localTime = 0;
   tmElements_t tm;
-  
+
+#ifndef ENERGY_EFFICIENT
   Serial.begin(115200);
   delay(10);
+#endif
 
   g_rstInfo = system_get_rst_info();
 
+#ifndef ENERGY_EFFICIENT
   if ((g_logSer = logger.regLogDestSerial(DEBUG, LOG_SERIAL)) < 0) {
     Serial.println();
     Serial.println("Register Serial logger failed!");
@@ -30,6 +35,7 @@ void setup() {
     Serial.println();
     Serial.println("Register Wifi logger failed!");
   }
+#endif
 
   wifiConnect();
   
@@ -65,6 +71,7 @@ void setup() {
   g_Max_PWM = (g_skullsEyes.dimmer == 100) ? C_MAX_PWM : g_skullsEyes.dimmer * 2.7;
   g_LED_brightness_factor = pow((double) g_Max_PWM, (double) 1 / g_skullsEyes.steps);
 
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", "");
   logger.logln(DEBUG, "SETUP", "Reason for wakeup or (re)start:");
   logger.logln(DEBUG, "SETUP", "g_rstInfo->reason = " + String(g_rstInfo->reason));
@@ -99,28 +106,34 @@ void setup() {
   logger.logln(DEBUG, "SETUP", String("t_localTime                 : ") + t_localTime);
   logger.logln(DEBUG, "SETUP", String("g_skullsEyes.wakeupTime     : ") + g_skullsEyes.wakeupTime);
   logger.logln(DEBUG, "SETUP", String("g_skullsEyes.sleepTime      : ") + g_skullsEyes.sleepTime);
+#endif
 
   if (g_rstInfo->reason == REASON_DEEP_SLEEP_AWAKE) {
     t_timeDiff = g_skullsEyes.wakeupTime - t_localTime;
 
+#ifndef ENERGY_EFFICIENT
     logger.logln(DEBUG, "SETUP", String("t_timeDiff (WakeupTime - LocalTime): ") + t_timeDiff);
+#endif
 
     if (t_timeDiff > 0) {
-      uint32_t ul_sleepSecs = (t_timeDiff > C_MAX_SLEEP_SECS) ? C_MAX_SLEEP_SECS : t_timeDiff;
+      uint32_t ul_sleepSecs = (t_timeDiff >= C_MAX_SLEEP_SECS) ? C_MAX_SLEEP_SECS : t_timeDiff;
       
-      t_localTime = getLocalTime();  // to get new localTimeApprox
-      g_skullsEyes.localTimeApprox += ul_sleepSecs;  // localTimeApprox will be at next wakeup
+#ifndef ENERGY_EFFICIENT
+      logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + ul_sleepSecs + " sec.)");
+#endif
+
+      // set the localTimeApprox to the time the esp8266 will wake up
+      setTime(getLocalTime() + ul_sleepSecs);
       saveConfig();
 
       if (ul_sleepSecs == C_MAX_SLEEP_SECS)
-        ul_sleepSecs += C_RTC_CORRECTION;  // esp8266 wakes up ~150 secs to early if letting it sleep for 1 hour
-      logger.logln(DEBUG, "SETUP", String("ESP.deepSleep(") + ul_sleepSecs + " sec.)");
+        ul_sleepSecs += C_RTC_CORRECTION;
+        
       ESP.deepSleep(ul_sleepSecs * 1000 * 1000);
       delay(5000);
     }
     else {
       g_skullsEyes.wakeupTime += SECS_PER_DAY;
-      saveConfig();
     }
   }
   
@@ -145,18 +158,18 @@ void loop() {
   ArduinoOTA.handle();
 
   if (WiFi.status() != WL_CONNECTED) {
+#ifndef ENERGY_EFFICIENT
     logger.logln(DEBUG, "LOOP", "");
     logger.logln(DEBUG, "LOOP", "WiFi connection lost, trying to reconnect");
+#endif
 
     if (wifiConnect()) {
       setupOTA();
       ntpConnect();
       setupWebserver();
-      
-      t_localTime = getLocalTime();
     }
     else
-      delay(5000); 
+      delay(60000); 
   }
 
   if (! g_OTAInProgress) {
@@ -179,13 +192,13 @@ void loop() {
         g_skullsEyes.wakeupTime = makeTime(tm); 
         g_skullsEyes.sleepTime  = (g_skullsEyes.stayAliveHours == 0) ? 0 : 
                                    g_skullsEyes.wakeupTime + g_skullsEyes.stayAliveHours * SECS_PER_HOUR;
-    
       }
 
       if (t_localTime > g_skullsEyes.wakeupTime) {
         g_skullsEyes.wakeupTime += SECS_PER_DAY;
       }
 
+#ifndef ENERGY_EFFICIENT
       logger.logln(DEBUG, "LOOP", "");
       sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
                         day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
@@ -210,24 +223,25 @@ void loop() {
       logger.logln(DEBUG, "LOOP", String("t_localTime                 : ") + t_localTime);
       logger.logln(DEBUG, "LOOP", String("g_skullsEyes.wakeupTime     : ") + g_skullsEyes.wakeupTime);
       logger.logln(DEBUG, "LOOP", String("g_skullsEyes.sleepTime      : ") + g_skullsEyes.sleepTime);
+#endif
 
       if (g_skullsEyes.sleepTime > 0 && t_localTime > g_skullsEyes.sleepTime) {
         g_skullsEyes.sleepTime += SECS_PER_DAY;
 
+#ifndef ENERGY_EFFICIENT
         sprintf(g_logStr, "new sleep time: %02d.%02d.%04d - %02d:%02d:%02d",
                           day(g_skullsEyes.sleepTime), month(g_skullsEyes.sleepTime), 
                           year(g_skullsEyes.sleepTime), hour(g_skullsEyes.sleepTime), 
                           minute(g_skullsEyes.sleepTime), second(g_skullsEyes.sleepTime));
         logger.logln(DEBUG, "LOOP", g_logStr);
         logger.logln(DEBUG, "LOOP", String("new g_skullsEyes.sleepTime: ") + g_skullsEyes.sleepTime);
-  
-        t_localTime = getLocalTime();  // to get new localTimeApprox
-        g_skullsEyes.localTimeApprox += C_MAX_SLEEP_SECS;  // localTimeApprox will be at next wakeup
+
+        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + C_MAX_SLEEP_SECS + " sec.)");
+#endif
+
+        setTime(getLocalTime() + C_MAX_SLEEP_SECS);  // localTimeApprox will be at next wakeup
         saveConfig();
   
-        logger.logln(DEBUG, "LOOP", String("ESP.deepSleep(") + String((C_MAX_SLEEP_SECS + C_RTC_CORRECTION)) + 
-                                    " sec.)");
-
         ESP.deepSleep((C_MAX_SLEEP_SECS + C_RTC_CORRECTION) * 1000 * 1000);
         delay(5000);
       }
@@ -241,11 +255,13 @@ void loop() {
 // - connects to WiFi
 // __________________________________________________________________________________
 boolean wifiConnect() {
+#ifndef ENERGY_EFFICIENT
   logger.logln(g_logSer, DEBUG, "SETUP", "");
   logger.logln(g_logSer, DEBUG, "SETUP", String("----------------------------------------------------"));
   logger.logln(g_logSer, DEBUG, "SETUP", String("ESP8266 (re)starting or reconnecting after WiFi lost"));
   logger.logln(g_logSer, DEBUG, "SETUP", "");
   logger.logln(g_logSer, DEBUG, "SETUP", String("Connecting to AP '") + C_SSID + "': ");
+#endif
 
   WiFi.hostname(C_HOSTNAME);
   WiFi.mode(WIFI_STA); // Als Station an einen vorhanden Access Ppoint anmelden
@@ -256,11 +272,16 @@ boolean wifiConnect() {
   while (WiFi.status() != WL_CONNECTED && conn_tics < 20) {
     conn_tics++;
     delay(500);
+#ifndef ENERGY_EFFICIENT
     Serial.print(".");
+#endif
   }
+#ifndef ENERGY_EFFICIENT
   Serial.println();
+#endif
 
   if (WiFi.status() == WL_CONNECTED) {
+#ifndef ENERGY_EFFICIENT
     IPAddress IPAddr = WiFi.localIP();
     
     logger.logln(g_logWifi, DEBUG, "SETUP", "");
@@ -272,18 +293,25 @@ boolean wifiConnect() {
     logger.logln(DEBUG, "SETUP", String("Time to connect: ") + conn_tics * 500 + " ms");
     logger.logln(DEBUG, "SETUP", String("IP-Adr: ") + IPAddr[0] + "." + IPAddr[1] + "." + IPAddr[2] + "." + IPAddr[3]);
 //    WiFi.printDiag(Serial);
+#endif
 
     if (! MDNS.begin(C_HOSTNAME)) {  // Start the mDNS responder for skulleyes.local
+#ifndef ENERGY_EFFICIENT
       logger.logln(DEBUG, "SETUP", "Error setting up MDNS responder!");
+#endif
     } 
+#ifndef ENERGY_EFFICIENT
     else {
       logger.logln(DEBUG, "SETUP", String("mDNS responder started - Hostname: ") + C_HOSTNAME + ".local");
     }
+#endif
   }
+#ifndef ENERGY_EFFICIENT
   else {
     logger.logln(DEBUG, "SETUP", "");
     logger.logln(DEBUG, "SETUP", String("Connecting to AP '") + C_SSID + "' failed!");
   }
+#endif
 
   return (WiFi.status() == WL_CONNECTED);
 }
@@ -292,8 +320,10 @@ boolean wifiConnect() {
 // - setup of OTA stuff
 // __________________________________________________________________________________
 void setupOTA() {
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", "");
   logger.logln(DEBUG, "SETUP", String("setup OTA - hostname: ") + C_HOSTNAME);
+#endif
 
   // Hostname defaults to esp8266-[ChipID]
   ArduinoOTA.setHostname(C_HOSTNAME);
@@ -306,42 +336,56 @@ void setupOTA() {
 
   ArduinoOTA.onStart([]() {
     g_OTAInProgress = true;
+#ifndef ENERGY_EFFICIENT
     Serial.println("");
     Serial.println("OTA - Start");
+#endif
   });
   ArduinoOTA.onEnd([]() {
     g_OTAInProgress = false;
+#ifndef ENERGY_EFFICIENT
     Serial.println("");
     Serial.println("OTA - End");
+#endif
   });
+#ifndef ENERGY_EFFICIENT
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
   });
+#endif
   ArduinoOTA.onError([](ota_error_t error) {
     g_OTAInProgress = false;
+#ifndef ENERGY_EFFICIENT
     Serial.printf("Error[%u]: ", error);
     if      (error == OTA_AUTH_ERROR)    Serial.println("Auth Failed");
     else if (error == OTA_BEGIN_ERROR)   Serial.println("Begin Failed");
     else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
     else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
     else if (error == OTA_END_ERROR)     Serial.println("End Failed");
+#endif
   });
 
   ArduinoOTA.begin();
 
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", "OTA begin");
+#endif
 }
 
 // ___________________________________ ntpConnect ___________________________________
 // - setup of ntp server
 // __________________________________________________________________________________
 void ntpConnect() {
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", ""); 
   logger.logln(DEBUG, "SETUP", String("Connecting to ntp server: ") + C_NTP_SERVER_NAME);
+#endif
 
   UDP.begin(123);  // Start listening for UDP messages on port 123
 
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", String("Local port: ") + UDP.localPort());
+#endif
 
   setSyncInterval(C_NTP_SYNC_INTERVAL);
   setSyncProvider(getNtpTime);
@@ -379,15 +423,21 @@ time_t getNtpTime() {
 
   while (UDP.parsePacket() > 0) ; // discard any previously received packets
 
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "TIME", "");
   logger.logln(DEBUG, "TIME", "Sending NTP request ...");
+#endif
 
   if (! WiFi.hostByName(C_NTP_SERVER_NAME, g_timeServerIP)) {  // Get the IP address of the NTP server
+#ifndef ENERGY_EFFICIENT
     logger.logln(DEBUG, "TIME", "DNS lookup failed!");
+#endif
   }
   else {
+#ifndef ENERGY_EFFICIENT
     logger.logln(DEBUG, "TIME", String("Time server IP: ") + g_timeServerIP[0] + "." + g_timeServerIP[1] + "." + 
                                                              g_timeServerIP[2] + "." + g_timeServerIP[3]);
+#endif
 
     for (int i = 1; i <= 2; i++) {
       sendNTPpacket(g_timeServerIP);
@@ -395,8 +445,9 @@ time_t getNtpTime() {
       uint32_t ui_beginWait = millis();
       while (millis() - ui_beginWait < 3000) {
         if (UDP.parsePacket() >= C_NTP_PACKET_SIZE) {
+#ifndef ENERGY_EFFICIENT
           logger.logln(DEBUG, "TIME", "Receive NTP Response");
-          
+#endif          
           UDP.read(g_NTPBuffer, C_NTP_PACKET_SIZE);  // read packet into the buffer
     
           // convert four bytes starting at location 40 to a long integer
@@ -413,6 +464,7 @@ time_t getNtpTime() {
         break;
     }
 
+#ifndef ENERGY_EFFICIENT
     if (t_timeUNIX == 0) {
       logger.logln(DEBUG, "TIME", "No NTP Response!");
     }
@@ -422,6 +474,7 @@ time_t getNtpTime() {
                         hour(t_timeUNIX), minute(t_timeUNIX), second(t_timeUNIX));
       logger.logln(DEBUG, "TIME", g_logStr);
     }
+#endif
   }
   
   return t_timeUNIX;
@@ -434,63 +487,28 @@ time_t getLocalTime() {
   static TimeChangeRule   CEST = { "CEST", Last, Sun, Mar, 2, 120 };  // Central European Summer Time
   static TimeChangeRule   CET  = { "CET",  Last, Sun, Oct, 3,  60 };  // Central European Standard Time
   static Timezone         CE(CEST, CET);
-  static TimeChangeRule * tcr;             //pointer to the time change rule, use to get the TZ abbrev
-  static unsigned long    sul_millis = 0;
+  static TimeChangeRule * tcr;  //pointer to the time change rule, use to get the TZ abbrev
   
-  g_skullsEyes.localTimeApprox += (millis() - sul_millis) / 1000;
-  sul_millis = millis();      
-
-  time_t t_timeLOCAL = CE.toLocal(now(), &tcr);
-  
-  logger.logln(DEBUG, "TIME", "");
-  logger.logln(DEBUG, "TIME", "Before check TimeLocal - TimeLocalApprox deviation:");
-  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
-                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
-                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
-                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
-  logger.logln(DEBUG, "TIME", g_logStr);
-  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
-                    day(t_timeLOCAL), month(t_timeLOCAL), year(t_timeLOCAL),
-                    hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
-  logger.logln(DEBUG, "TIME", g_logStr);
-
-  if (timeStatus() != timeSet) {
-    t_timeLOCAL = g_skullsEyes.localTimeApprox;
-  
-    logger.logln(DEBUG, "TIME", "No valid NTP-time, so use LocalTimeApprox");
-  }
-
-  g_skullsEyes.localTimeApprox = t_timeLOCAL;
-
-  logger.logln(DEBUG, "TIME", "After check TimeLocal - TimeLocalApprox deviation:");
-  sprintf(g_logStr, "local time approx: %02d.%02d.%04d - %02d:%02d:%02d",
-                    day(g_skullsEyes.localTimeApprox), month(g_skullsEyes.localTimeApprox), 
-                    year(g_skullsEyes.localTimeApprox), hour(g_skullsEyes.localTimeApprox), 
-                    minute(g_skullsEyes.localTimeApprox), second(g_skullsEyes.localTimeApprox));
-  logger.logln(DEBUG, "TIME", g_logStr);
-  sprintf(g_logStr, "local time       : %02d.%02d.%04d - %02d:%02d:%02d",
-                    day(t_timeLOCAL), month(t_timeLOCAL), year(t_timeLOCAL),
-                    hour(t_timeLOCAL), minute(t_timeLOCAL), second(t_timeLOCAL));
-  logger.logln(DEBUG, "TIME", g_logStr);
-
-  saveConfig();
-
-  return t_timeLOCAL;
+  return CE.toLocal(now(), &tcr);
 }
 
 // ___________________________________ setupWebserver _______________________________
 // - setup of Webserver
 // __________________________________________________________________________________
 void setupWebserver() {
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", "");
   logger.logln(DEBUG, "SETUP", "setup Webserver...");
+#endif
 
   webServer.on("/", wsHandler_skull_eyes_parameters);
   webServer.on("/skullseyes", wsHandler_skull_eyes_parameters);
   webServer.onNotFound(wsNotFoundHandler);
   webServer.begin();
 
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SETUP", "Webserver started, listening on Port 80");
+#endif
 }
 
 // ___________________________________ LEDFadingTimerCB _____________________________
@@ -600,7 +618,9 @@ void wsHandler_skull_eyes_parameters() {
       time_t t_localTime = getLocalTime();  // to get new localTimeApprox
       g_skullsEyes.localTimeApprox += C_MIN_SECS;  // localTimeApprox will be at next wakeup
       saveConfig();
+#ifndef ENERGY_EFFICIENT
       logger.logln(DEBUG, "HTTP", String("ESP.deepSleep(") + C_MIN_SECS + " sec.)");
+#endif
       ESP.deepSleep(C_MIN_MICROSECS);
       delay(5000);
     }
@@ -647,6 +667,7 @@ void wsHandler_skull_eyes_parameters() {
       g_skullsEyes.sleepTime += SECS_PER_DAY;
     }
 
+#ifndef ENERGY_EFFICIENT
     logger.logln(DEBUG, "HTTP", "");
     logger.logln(DEBUG, "HTTP", "WebServer Handler 'wsHandler_skull_eyes_parameters':");
     
@@ -665,6 +686,7 @@ void wsHandler_skull_eyes_parameters() {
     logger.logln(DEBUG, "HTTP", g_logStr);
     logger.logln(DEBUG, "HTTP", String("g_skullsEyes.wakeupTime: ") + g_skullsEyes.wakeupTime);
     logger.logln(DEBUG, "HTTP", String("g_skullsEyes.sleepTime:  ") + g_skullsEyes.sleepTime);
+#endif
   }
 
   webServer.send(200, "text/html", buildHTML(g_skullsEyes.steps, g_skullsEyes.ledDelayMS, 
@@ -678,10 +700,12 @@ void wsHandler_skull_eyes_parameters() {
 // - Is called on any not defined URL
 // __________________________________________________________________________________
 void wsNotFoundHandler() {
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "HTTP", "");
   logger.logln(DEBUG, "HTTP", "Not Found Handler");
 
   logDetails();
+#endif
 
   String message = "File Not Found\n\n";
   message += "URI: ";
@@ -741,11 +765,13 @@ void loadConfig() {
   EEPROM.get(0, g_skullsEyes);
   EEPROM.end();
   
-  if (g_skullsEyes.saved != 0x1010) {
+  if (g_skullsEyes.saved != 0xAAAA) {
+#ifndef ENERGY_EFFICIENT
     logger.logln(DEBUG, "LOAD-CONFIG", "");
     logger.logln(DEBUG, "LOAD-CONFIG", "Load config failed or not saved last time !!!");
+#endif
 
-    g_skullsEyes.saved               = 0x1010;
+    g_skullsEyes.saved               = 0x0;
     g_skullsEyes.control             =   2;  // 0: On, 1: Off, 2: Fade
     g_skullsEyes.ledDelayMS          =  80;
     g_skullsEyes.ledExtraDelayTop    =   4;
@@ -758,19 +784,27 @@ void loadConfig() {
     g_skullsEyes.sleepTime           =   0;
     g_skullsEyes.localTimeApprox     =   0;
   }
+  else {
+    setTime(g_skullsEyes.localTimeApprox);
+  }
 }
 
 // ___________________________________ saveConfig ___________________________________
 // - Saves config to RTC memory
 // __________________________________________________________________________________
 void saveConfig() {
+  g_skullsEyes.saved           = 0xAAAA;
+  g_skullsEyes.localTimeApprox = getLocalTime();
+  
   EEPROM.begin(512);
   EEPROM.put(0, g_skullsEyes);
   delay(200);
   EEPROM.commit();
   EEPROM.end();
 
+#ifndef ENERGY_EFFICIENT
   logger.logln(DEBUG, "SAVE-CONFIG", "");
   logger.logln(DEBUG, "SAVE-CONFIG", "Config saved");
+#endif
 }
 
